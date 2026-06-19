@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    
+    <!-- Paper Sheet Outline -->
+    <path
+        android:strokeColor="#FF000000"
+        android:strokeWidth="3.5"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:fillColor="#00000000"
+        android:pathData="M34,24 L62,24 L72,34 L72,84 C72,85.1 71.1,86 70,86 L34,86 C32.9,86 32,85.1 32,84 L32,28 C32,26.9 32.9,26 34,26 Z" />
+        
+    <!-- Folded Corner Line -->
+    <path
+        android:strokeColor="#FF000000"
+        android:strokeWidth="3.5"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:fillColor="#00000000"
+        android:pathData="M62,24 L62,34 L72,34" />
+        
+    <!-- Content Lines representing document text -->
+    <path
+        android:strokeColor="#FF000000"
+        android:strokeWidth="3.5"
+        android:strokeLineCap="round"
+        android:pathData="M40,44 L64,44" />
+        
+    <path
+        android:strokeColor="#FF000000"
+        android:strokeWidth="3.5"
+        android:strokeLineCap="round"
+        android:pathData="M40,54 L56,54" />
+        
+    <path
+        android:strokeColor="#FF000000"
+        android:strokeWidth="3.5"
+        android:strokeLineCap="round"
+        android:pathData="M40,64 L48,64" />
+
+    <!-- Pencil overlaying bottom right of the document -->
+    <path
+        android:strokeColor="#FF000000"
+        android:strokeWidth="3.5"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:fillColor="#FF000000"
+        android:pathData="M64,68 L78,82 L82,78 L68,64 Z" />
+        
+    <!-- Pencil Tip -->
+    <path
+        android:strokeColor="#FF000000"
+        android:strokeWidth="3.5"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:fillColor="#FF000000"
+        android:pathData="M64,68 L58,70 L60,64 Z" />
+
+</vector>

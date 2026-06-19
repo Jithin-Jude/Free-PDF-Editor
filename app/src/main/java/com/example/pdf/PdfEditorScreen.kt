@@ -15,6 +15,17 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.calculateCentroid
+import androidx.compose.foundation.gestures.calculateCentroidSize
+import androidx.compose.foundation.gestures.calculatePan
+import androidx.compose.foundation.gestures.calculateZoom
+import androidx.compose.foundation.gestures.calculateRotation
+import androidx.compose.ui.input.pointer.PointerInputChange
+import androidx.compose.ui.input.pointer.PointerInputScope
+import androidx.compose.ui.input.pointer.positionChanged
+import kotlin.math.abs
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -493,10 +504,10 @@ fun PdfEditorScreen(
                                         Box(
                                             modifier = Modifier
                                                 .fillMaxSize()
-                                                .pointerInput(page.index, isDraggingElement) {
-                                                    if (isDraggingElement) return@pointerInput
-                                                    detectTransformGestures { _, pan, zoom, _ ->
-                                                        if (isDraggingElement) return@detectTransformGestures
+                                                .pointerInput(page.index) {
+                                                    detectTransformGesturesEnabled(
+                                                        enabled = { !isDraggingElement }
+                                                    ) { _, pan, zoom, _ ->
                                                         scale = (scale * zoom).coerceIn(1f, 5f)
                                                         if (scale > 1f) {
                                                             val maxTx = (scale - 1f) * size.width / 2f
@@ -1525,6 +1536,66 @@ fun InteractiveOverlayWidget(
                 )
             }
         }
+    }
+}
+
+suspend fun PointerInputScope.detectTransformGesturesEnabled(
+    enabled: () -> Boolean,
+    onGesture: (centroid: Offset, pan: Offset, zoom: Float, rotation: Float) -> Unit
+) {
+    awaitEachGesture {
+        var rotation = 0f
+        var zoom = 1f
+        var pan = Offset.Zero
+        var pastTouchSlop = false
+        val touchSlop = viewConfiguration.touchSlop
+
+        awaitFirstDown(requireUnconsumed = false)
+        do {
+            val event = awaitPointerEvent()
+            val canceled = event.changes.any { it.isConsumed }
+            if (!canceled) {
+                if (!enabled()) {
+                    continue
+                }
+
+                val zoomChange = event.calculateZoom()
+                val rotationChange = event.calculateRotation()
+                val panChange = event.calculatePan()
+
+                if (!pastTouchSlop) {
+                    zoom *= zoomChange
+                    rotation += rotationChange
+                    pan += panChange
+
+                    val centroid = event.calculateCentroid(useCurrent = false)
+                    val centroidSize = event.calculateCentroidSize(useCurrent = false)
+                    val zoomMotion = abs(1f - zoom) * centroidSize
+                    val rotationMotion = abs(rotation) * kotlin.math.PI.toFloat() * centroidSize / 180f
+                    val panMotion = pan.getDistance()
+
+                    if (zoomMotion > touchSlop ||
+                        rotationMotion > touchSlop ||
+                        panMotion > touchSlop
+                    ) {
+                        pastTouchSlop = true
+                    }
+                }
+
+                if (pastTouchSlop) {
+                    val centroid = event.calculateCentroid(useCurrent = false)
+                    val effectiveRotation = rotationChange
+                    if (zoomChange != 1f || panChange != Offset.Zero || effectiveRotation != 0f) {
+                        onGesture(centroid, panChange, zoomChange, effectiveRotation)
+                    }
+                    event.changes.forEach {
+                        if (it.positionChanged()) {
+                            it.consume()
+                        }
+                    }
+                }
+            }
+        } while (!canceled && event.changes.any { it.pressed })
     }
 }
 
