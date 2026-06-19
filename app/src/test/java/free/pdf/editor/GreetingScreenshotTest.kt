@@ -1,10 +1,10 @@
-package com.example
+package free.pdf.editor
 
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onRoot
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import com.example.ui.theme.MyApplicationTheme
+import free.pdf.editor.ui.theme.MyApplicationTheme
 import com.github.takahirom.roborazzi.RobolectricDeviceQualifiers
 import com.github.takahirom.roborazzi.captureRoboImage
 import org.junit.Rule

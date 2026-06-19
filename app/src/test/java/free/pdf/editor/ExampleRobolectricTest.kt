@@ -1,4 +1,4 @@
-package com.example
+package free.pdf.editor
 
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider

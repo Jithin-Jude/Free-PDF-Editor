@@ -1,4 +1,4 @@
-package com.example
+package free.pdf.editor
 
 import org.junit.Assert.*
 import org.junit.Test

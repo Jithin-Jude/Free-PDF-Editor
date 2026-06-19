@@ -1,4 +1,4 @@
-package com.example.ui.theme
+package free.pdf.editor.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
