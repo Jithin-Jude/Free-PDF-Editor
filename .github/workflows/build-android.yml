@@ -42,7 +42,7 @@ jobs:
 
     # Uploads the final .aab file so you can download it directly from GitHub
     - name: Upload Artifact
-      uses: actions/artifacts@v4
+      uses: actions/upload-artifact@v4
       with:
         name: release-app-bundle
         path: app/build/outputs/bundle/release/*.aab
