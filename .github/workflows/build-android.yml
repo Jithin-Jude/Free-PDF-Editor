@@ -24,11 +24,6 @@ jobs:
         gradle-version: '9.3.1'
         validate-wrappers: false
 
-    # Recreates the .env file expected by the AI Studio project
-    - name: Create Env File
-      run: |
-        echo "GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}" > .env
-
     # Decodes your keystore file from the GitHub Secret back into a physical file
     - name: Decode Keystore
       run: |
