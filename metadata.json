@@ -1,0 +1,6 @@
+{
+  "name": "PDF Editor",
+  "description": "A simple and powerful PDF editor to load, edit text and images, add whiteout redactions, and save modified PDFs directly to your device.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
