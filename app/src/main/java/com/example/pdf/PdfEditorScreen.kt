@@ -14,6 +14,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -28,8 +29,10 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color as ComposeColor
 import androidx.compose.ui.graphics.Path as ComposePath
 import androidx.compose.ui.graphics.StrokeCap
@@ -450,6 +453,9 @@ fun PdfEditorScreen(
                         ) {
                             items(state.pages) { page ->
                                 val isActivePage = page.index == state.currentPageIndex
+                                var scale by remember { mutableStateOf(1f) }
+                                var offset by remember { mutableStateOf(Offset.Zero) }
+                                var isDraggingElement by remember { mutableStateOf(false) }
                                 Column(
                                     modifier = Modifier
                                         .fillMaxWidth()
@@ -481,8 +487,44 @@ fun PdfEditorScreen(
                                             .fillMaxWidth()
                                             .aspectRatio(page.width.toFloat() / page.height.toFloat())
                                             .background(ComposeColor.White)
+                                            .clipToBounds()
                                     ) {
-                                        val containerWidthDp = maxWidth
+                                        val pageMaxWidth = maxWidth
+                                        Box(
+                                            modifier = Modifier
+                                                .fillMaxSize()
+                                                .pointerInput(page.index, isDraggingElement) {
+                                                    if (isDraggingElement) return@pointerInput
+                                                    detectTransformGestures { _, pan, zoom, _ ->
+                                                        if (isDraggingElement) return@detectTransformGestures
+                                                        scale = (scale * zoom).coerceIn(1f, 5f)
+                                                        if (scale > 1f) {
+                                                            val maxTx = (scale - 1f) * size.width / 2f
+                                                            val maxTy = (scale - 1f) * size.height / 2f
+                                                            val newX = (offset.x + pan.x).coerceIn(-maxTx, maxTx)
+                                                            val newY = (offset.y + pan.y).coerceIn(-maxTy, maxTy)
+                                                            offset = Offset(newX, newY)
+                                                        } else {
+                                                            offset = Offset.Zero
+                                                        }
+                                                    }
+                                                }
+                                                .pointerInput(page.index) {
+                                                    detectTapGestures(
+                                                        onDoubleTap = {
+                                                            scale = 1f
+                                                            offset = Offset.Zero
+                                                        }
+                                                    )
+                                                }
+                                                .graphicsLayer {
+                                                    scaleX = scale
+                                                    scaleY = scale
+                                                    translationX = offset.x
+                                                    translationY = offset.y
+                                                }
+                                        ) {
+                                            val containerWidthDp = pageMaxWidth
                                         val scalePointsToDp = containerWidthDp.value / page.width.toFloat()
 
                                         // Background rendered PDF image
@@ -614,6 +656,7 @@ fun PdfEditorScreen(
                                                         }
                                                     }
                                                 },
+                                                onDragStateChange = { isDragging -> isDraggingElement = isDragging },
                                                 onDeleteTap = {
                                                     viewModel.deleteElement(page.index, element.id)
                                                 }
@@ -628,7 +671,7 @@ fun PdfEditorScreen(
                                                     .background(ComposeColor.Black.copy(alpha = 0.08f))
                                                     .pointerInput(page, eyeDropperTargetElement, eyeDropperPageIndex) {
                                                         detectTapGestures { offset ->
-                                                            val innerContainerWidthDp = maxWidth
+                                                            val innerContainerWidthDp = pageMaxWidth
                                                             val innerScalePointsToDp = innerContainerWidthDp.value / page.width.toFloat()
                                                             val scalePointsToPx = innerScalePointsToDp * (context.resources.displayMetrics.density)
                                                             
@@ -695,6 +738,42 @@ fun PdfEditorScreen(
                                                         .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.8f), CircleShape)
                                                         .padding(8.dp)
                                                 )
+                                            }
+                                        }
+                                        }
+
+                                        // Floating Zoom Reset Indicator
+                                        if (scale > 1f) {
+                                            Surface(
+                                                modifier = Modifier
+                                                    .align(Alignment.TopEnd)
+                                                    .padding(8.dp)
+                                                    .clickable {
+                                                        scale = 1f
+                                                        offset = Offset.Zero
+                                                    },
+                                                color = MaterialTheme.colorScheme.primaryContainer,
+                                                shape = RoundedCornerShape(16.dp),
+                                                shadowElevation = 4.dp
+                                            ) {
+                                                Row(
+                                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                                    verticalAlignment = Alignment.CenterVertically
+                                                ) {
+                                                    Icon(
+                                                        imageVector = Icons.Rounded.ZoomOut,
+                                                        contentDescription = "Reset Zoom",
+                                                        modifier = Modifier.size(14.dp),
+                                                        tint = MaterialTheme.colorScheme.onPrimaryContainer
+                                                    )
+                                                    Spacer(Modifier.width(4.dp))
+                                                    Text(
+                                                        text = "${(scale * 100).toInt()}% - Double-tap or Click to Reset",
+                                                        fontSize = 10.sp,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                                                    )
+                                                }
                                             }
                                         }
                                     }
@@ -1257,7 +1336,8 @@ fun InteractiveOverlayWidget(
     onPositionChange: (Float, Float) -> Unit,
     onResizeChange: (Float, Float) -> Unit,
     onEditTap: () -> Unit,
-    onDeleteTap: () -> Unit
+    onDeleteTap: () -> Unit,
+    onDragStateChange: (Boolean) -> Unit = {}
 ) {
     val context = LocalContext.current
     val systemDensity = context.resources.displayMetrics.density
@@ -1269,6 +1349,7 @@ fun InteractiveOverlayWidget(
     val currentElement by rememberUpdatedState(element)
     val currentOnPositionChange by rememberUpdatedState(onPositionChange)
     val currentOnResizeChange by rememberUpdatedState(onResizeChange)
+    val currentOnDragStateChange by rememberUpdatedState(onDragStateChange)
 
     Box(
         modifier = Modifier
@@ -1279,9 +1360,25 @@ fun InteractiveOverlayWidget(
                 color = if (isSelected) MaterialTheme.colorScheme.primary else ComposeColor.Transparent,
                 shape = RoundedCornerShape(4.dp)
             )
+            .pointerInput(Unit) {
+                awaitPointerEventScope {
+                    while (true) {
+                        val event = awaitPointerEvent(androidx.compose.ui.input.pointer.PointerEventPass.Initial)
+                        val anyPressed = event.changes.any { it.pressed }
+                        if (anyPressed) {
+                            currentOnDragStateChange(true)
+                        } else {
+                            currentOnDragStateChange(false)
+                        }
+                    }
+                }
+            }
             .pointerInput(scale, systemDensity) {
                 detectDragGestures(
-                    onDragStart = { onSelect() },
+                    onDragStart = { 
+                        onSelect() 
+                        currentOnDragStateChange(true)
+                    },
                     onDrag = { change, dragAmount ->
                         change.consume()
                         // Convert drag displacement (pixels) back into PDF original point values
@@ -1289,7 +1386,9 @@ fun InteractiveOverlayWidget(
                         val deltaXPoints = dragAmount.x / scalePointsToPx
                         val deltaYPoints = dragAmount.y / scalePointsToPx
                         currentOnPositionChange(currentElement.x + deltaXPoints, currentElement.y + deltaYPoints)
-                    }
+                    },
+                    onDragEnd = { currentOnDragStateChange(false) },
+                    onDragCancel = { currentOnDragStateChange(false) }
                 )
             }
             .clickable { onSelect() }
@@ -1388,14 +1487,32 @@ fun InteractiveOverlayWidget(
                     .offset(x = 6.dp, y = 6.dp)
                     .size(22.dp)
                     .background(MaterialTheme.colorScheme.secondary, CircleShape)
-                    .pointerInput(scale, systemDensity) {
-                        detectDragGestures { change, dragAmount ->
-                            change.consume()
-                            val scalePointsToPx = scale * systemDensity
-                            val deltaWPoints = dragAmount.x / scalePointsToPx
-                            val deltaHPoints = dragAmount.y / scalePointsToPx
-                            currentOnResizeChange(currentElement.width + deltaWPoints, currentElement.height + deltaHPoints)
+                    .pointerInput(Unit) {
+                        awaitPointerEventScope {
+                            while (true) {
+                                val event = awaitPointerEvent(androidx.compose.ui.input.pointer.PointerEventPass.Initial)
+                                val anyPressed = event.changes.any { it.pressed }
+                                if (anyPressed) {
+                                    currentOnDragStateChange(true)
+                                } else {
+                                    currentOnDragStateChange(false)
+                                }
+                            }
                         }
+                    }
+                    .pointerInput(scale, systemDensity) {
+                        detectDragGestures(
+                            onDragStart = { currentOnDragStateChange(true) },
+                            onDrag = { change, dragAmount ->
+                                change.consume()
+                                val scalePointsToPx = scale * systemDensity
+                                val deltaWPoints = dragAmount.x / scalePointsToPx
+                                val deltaHPoints = dragAmount.y / scalePointsToPx
+                                currentOnResizeChange(currentElement.width + deltaWPoints, currentElement.height + deltaHPoints)
+                            },
+                            onDragEnd = { currentOnDragStateChange(false) },
+                            onDragCancel = { currentOnDragStateChange(false) }
+                        )
                     }
                     .testTag("element_resize_handle"),
                 contentAlignment = Alignment.Center
