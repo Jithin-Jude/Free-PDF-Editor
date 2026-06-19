@@ -1,0 +1,48 @@
+name: Build Signed Android App Bundle
+
+on:
+  push:
+    branches: [ "main" ] # Triggers whenever you push to main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+
+    - name: Set up JDK 17
+      uses: actions/setup-java@v4
+      with:
+        distribution: 'zulu'
+        java-version: '17'
+        cache: 'gradle'
+
+    # Recreates the .env file expected by the AI Studio project
+    - name: Create Env File
+      run: |
+        echo "GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}" > .env
+
+    # Decodes your keystore file from the GitHub Secret back into a physical file
+    - name: Decode Keystore
+      run: |
+        echo "${{ secrets.SIGNING_KEY_STORE_BASE64 }}" | base64 --decode > app/release-keystore.jks
+
+    - name: Grant Execute Permission for Gradle
+      run: chmod +x ./gradlew
+
+    # Builds the release version of the App Bundle
+    - name: Build Release AAB
+      run: ./gradlew bundleRelease
+      env:
+        ANDROID_KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+        ANDROID_KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+        ANDROID_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+
+    # Uploads the final .aab file so you can download it directly from GitHub
+    - name: Upload Artifact
+      uses: actions/artifacts@v4
+      with:
+        name: release-app-bundle
+        path: app/build/outputs/bundle/release/*.aab
