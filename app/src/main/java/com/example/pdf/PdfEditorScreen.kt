@@ -1,6 +1,7 @@
 package com.example.pdf
 
 import android.content.Context
+import android.graphics.BitmapFactory
 import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -12,6 +13,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -80,6 +82,11 @@ fun PdfEditorScreen(
     // Dialog state for editing colors/whiteout elements
     var whiteoutEditElement by remember { mutableStateOf<PdfElement.Whiteout?>(null) }
     var whiteoutEditPageIndex by remember { mutableStateOf(-1) }
+
+    // Eye Dropper / Color picker from PDF states
+    var isEyeDropping by remember { mutableStateOf(false) }
+    var eyeDropperTargetElement by remember { mutableStateOf<PdfElement.Whiteout?>(null) }
+    var eyeDropperPageIndex by remember { mutableStateOf(-1) }
 
     // Dialog state for general successes or errors
     var showExportSuccessDialog by remember { mutableStateOf(false) }
@@ -612,6 +619,84 @@ fun PdfEditorScreen(
                                                 }
                                             )
                                         }
+
+                                        // Eye-dropper/Color sampling overlay (captures absolute pixel color on click, placed on top of all interactive layers)
+                                        if (isEyeDropping) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .fillMaxSize()
+                                                    .background(ComposeColor.Black.copy(alpha = 0.08f))
+                                                    .pointerInput(page, eyeDropperTargetElement, eyeDropperPageIndex) {
+                                                        detectTapGestures { offset ->
+                                                            val innerContainerWidthDp = maxWidth
+                                                            val innerScalePointsToDp = innerContainerWidthDp.value / page.width.toFloat()
+                                                            val scalePointsToPx = innerScalePointsToDp * (context.resources.displayMetrics.density)
+                                                            
+                                                            val tappedXPoints = offset.x / scalePointsToPx
+                                                            val tappedYPoints = offset.y / scalePointsToPx
+
+                                                            val file = File(page.cachePath)
+                                                            if (file.exists()) {
+                                                                try {
+                                                                    val bitmap = BitmapFactory.decodeFile(file.absolutePath)
+                                                                    if (bitmap != null) {
+                                                                        val pxX = ((tappedXPoints / page.width.toFloat()) * bitmap.width).toInt()
+                                                                            .coerceIn(0, bitmap.width - 1)
+                                                                        val pxY = ((tappedYPoints / page.height.toFloat()) * bitmap.height).toInt()
+                                                                            .coerceIn(0, bitmap.height - 1)
+                                                                        val pixelColorInt = bitmap.getPixel(pxX, pxY)
+                                                                        val r = android.graphics.Color.red(pixelColorInt)
+                                                                        val g = android.graphics.Color.green(pixelColorInt)
+                                                                        val b = android.graphics.Color.blue(pixelColorInt)
+                                                                        val sampledHex = String.format("#%02X%02X%02X", r, g, b)
+
+                                                                        bitmap.recycle()
+
+                                                                        // Re-open original dialog with sampled color
+                                                                        eyeDropperTargetElement?.let { target ->
+                                                                            whiteoutEditElement = target.copy(colorHex = sampledHex)
+                                                                            whiteoutEditPageIndex = eyeDropperPageIndex
+                                                                        }
+
+                                                                        Toast.makeText(context, "Sampled color: $sampledHex", Toast.LENGTH_SHORT).show()
+                                                                    }
+                                                                } catch (e: Exception) {
+                                                                    Toast.makeText(context, "Error sampling color: ${e.localizedMessage}", Toast.LENGTH_SHORT).show()
+                                                                } finally {
+                                                                    isEyeDropping = false
+                                                                    eyeDropperTargetElement = null
+                                                                    eyeDropperPageIndex = -1
+                                                                }
+                                                            } else {
+                                                                isEyeDropping = false
+                                                                eyeDropperTargetElement = null
+                                                                eyeDropperPageIndex = -1
+                                                            }
+                                                        }
+                                                    }
+                                                    .testTag("eyedropper_capture_layer"),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .fillMaxSize()
+                                                        .border(
+                                                            width = 3.dp,
+                                                            color = MaterialTheme.colorScheme.primary,
+                                                            shape = RoundedCornerShape(4.dp)
+                                                        )
+                                                )
+                                                Icon(
+                                                    imageVector = Icons.Rounded.Colorize,
+                                                    contentDescription = "Target",
+                                                    tint = MaterialTheme.colorScheme.primary,
+                                                    modifier = Modifier
+                                                        .size(40.dp)
+                                                        .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.8f), CircleShape)
+                                                        .padding(8.dp)
+                                                )
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -660,6 +745,66 @@ fun PdfEditorScreen(
                                     textAlign = TextAlign.Center
                                 )
                             }
+                        }
+                    }
+                }
+            }
+
+            if (isEyeDropping) {
+                Card(
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .padding(16.dp)
+                        .fillMaxWidth(0.95f)
+                        .shadow(12.dp, RoundedCornerShape(12.dp))
+                        .testTag("eyedropper_banner_card"),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.primaryContainer,
+                        contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                    ),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Colorize,
+                                contentDescription = "Eye Dropper Mode",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(24.dp)
+                            )
+                            Spacer(Modifier.width(12.dp))
+                            Column {
+                                Text(
+                                    "Eyedropper Color Picker Mode",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 14.sp
+                                )
+                                Text(
+                                    "Tap anywhere on any PDF page layout to lift its color",
+                                    fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
+                                )
+                            }
+                        }
+                        TextButton(
+                            onClick = {
+                                // Resume the original block config dialog
+                                whiteoutEditElement = eyeDropperTargetElement
+                                whiteoutEditPageIndex = eyeDropperPageIndex
+                                
+                                isEyeDropping = false
+                                eyeDropperTargetElement = null
+                                eyeDropperPageIndex = -1
+                            }
+                        ) {
+                            Text("Cancel", fontWeight = FontWeight.Bold)
                         }
                     }
                 }
@@ -822,53 +967,253 @@ fun PdfEditorScreen(
     // Modal Builder: Whiteout Color Customizer Dialog
     whiteoutEditElement?.let { element ->
         var selectedBgColor by remember { mutableStateOf(element.colorHex) }
+        var customHexText by remember { mutableStateOf(selectedBgColor) }
 
         AlertDialog(
             onDismissRequest = { whiteoutEditElement = null },
             confirmButton = {
-                Button(onClick = {
-                    val modifiedWhiteout = element.copy(colorHex = selectedBgColor)
-                    viewModel.updateElement(whiteoutEditPageIndex, element.id, modifiedWhiteout)
-                    whiteoutEditElement = null
-                }) {
+                Button(
+                    onClick = {
+                        val modifiedWhiteout = element.copy(colorHex = selectedBgColor)
+                        viewModel.updateElement(whiteoutEditPageIndex, element.id, modifiedWhiteout)
+                        whiteoutEditElement = null
+                    },
+                    modifier = Modifier.testTag("apply_whiteout_changes_button")
+                ) {
                     Text("Apply")
                 }
             },
             dismissButton = {
                 TextButton(onClick = { whiteoutEditElement = null }) { Text("Cancel") }
             },
-            title = { Text("Configure Cover Block") },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Rounded.ColorLens,
+                        contentDescription = "Block Color",
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text("Configure Cover Block")
+                }
+            },
             text = {
-                Column {
-                    Text("Select Background Redaction Color:", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Spacer(Modifier.height(12.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        // Standard colors: White, Black (redaction bar), Highlighter yellow, outline grey
-                        listOf(
-                            "#FFFFFF" to "Whiteout",
-                            "#000000" to "Redact (Black)",
-                            "#FFEB3B" to "Highlight",
-                            "#FFCDD2" to "Ruby"
-                        ).forEach { (hex, label) ->
+                Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                    
+                    // Eye dropper / Color picker from PDF Section
+                    Card(
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.4f)
+                        ),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(12.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Text(
+                                "Live Sample from Document",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSecondaryContainer
+                            )
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                "Sample any exact pixel color from your opened PDF document background to match the style perfectly.",
+                                fontSize = 10.sp,
+                                color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.8f),
+                                textAlign = TextAlign.Center
+                            )
+                            Spacer(Modifier.height(8.dp))
+                            Button(
+                                onClick = {
+                                    // Start eye dropping!
+                                    eyeDropperTargetElement = element
+                                    eyeDropperPageIndex = whiteoutEditPageIndex
+                                    isEyeDropping = true
+                                    // Close current dialog instance
+                                    whiteoutEditElement = null
+                                },
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = MaterialTheme.colorScheme.primary
+                                ),
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier.testTag("eyedropper_trigger_button")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Colorize,
+                                    contentDescription = "Pick code",
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                Text("Pick Color from PDF", fontSize = 12.sp)
+                            }
+                        }
+                    }
+
+                    // Divider
+                    Spacer(Modifier.height(1.dp).fillMaxWidth().background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)))
+
+                    // Palette Preset Row 1 & 2
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Text(
+                            "Color Palette Presets:", 
+                            fontSize = 12.sp, 
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            listOf(
+                                "#FFFFFF" to "Whiteout",
+                                "#000000" to "Redact",
+                                "#FFEB3B" to "Highlight",
+                                "#FFCDD2" to "Ruby"
+                            ).forEach { (hex, label) ->
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(8.dp))
+                                        .border(
+                                            width = if (selectedBgColor.uppercase() == hex.uppercase()) 2.5.dp else 1.dp,
+                                            color = if (selectedBgColor.uppercase() == hex.uppercase()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline.copy(alpha = 0.2f),
+                                            shape = RoundedCornerShape(8.dp)
+                                        )
+                                        .clickable {
+                                            selectedBgColor = hex
+                                            customHexText = hex
+                                        }
+                                        .padding(4.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(28.dp)
+                                                .clip(RoundedCornerShape(6.dp))
+                                                .background(ComposeColor(android.graphics.Color.parseColor(hex)))
+                                                .border(1.dp, ComposeColor.Gray.copy(0.3f), RoundedCornerShape(6.dp))
+                                        )
+                                        Spacer(Modifier.height(4.dp))
+                                        Text(label, fontSize = 9.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    }
+                                }
+                            }
+                        }
+
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            listOf(
+                                "#C8E6C9" to "Sage",
+                                "#BBDEFB" to "Sky",
+                                "#FFF9C4" to "Cream",
+                                "#E1BEE7" to "Lavender"
+                            ).forEach { (hex, label) ->
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(8.dp))
+                                        .border(
+                                            width = if (selectedBgColor.uppercase() == hex.uppercase()) 2.5.dp else 1.dp,
+                                            color = if (selectedBgColor.uppercase() == hex.uppercase()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline.copy(alpha = 0.2f),
+                                            shape = RoundedCornerShape(8.dp)
+                                        )
+                                        .clickable {
+                                            selectedBgColor = hex
+                                            customHexText = hex
+                                        }
+                                        .padding(4.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(28.dp)
+                                                .clip(RoundedCornerShape(6.dp))
+                                                .background(ComposeColor(android.graphics.Color.parseColor(hex)))
+                                                .border(1.dp, ComposeColor.Gray.copy(0.3f), RoundedCornerShape(6.dp))
+                                        )
+                                        Spacer(Modifier.height(4.dp))
+                                        Text(label, fontSize = 9.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Divider
+                    Spacer(Modifier.height(1.dp).fillMaxWidth().background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)))
+
+                    // Custom Color Input / Preview Selector
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(
+                            "Enter Custom Hex Color:",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            OutlinedTextField(
+                                value = customHexText,
+                                onValueChange = { input ->
+                                    customHexText = input
+                                    // Try to parse Hex color if length makes sense
+                                    if (input.startsWith("#") && (input.length == 7 || input.length == 9)) {
+                                        try {
+                                            android.graphics.Color.parseColor(input)
+                                            selectedBgColor = input
+                                        } catch (e: Exception) {
+                                            // Invalid hex value, don't update
+                                        }
+                                    } else if (!input.startsWith("#") && (input.length == 6 || input.length == 8)) {
+                                        val formatted = "#$input"
+                                        try {
+                                            android.graphics.Color.parseColor(formatted)
+                                            selectedBgColor = formatted
+                                        } catch (e: Exception) {
+                                            // Invalid hex value
+                                        }
+                                    }
+                                },
+                                placeholder = { Text("#FFFFFF") },
+                                modifier = Modifier.weight(1f).testTag("custom_hex_input_field"),
+                                textStyle = androidx.compose.ui.text.TextStyle(fontSize = 14.sp),
+                                singleLine = true,
+                                label = { Text("Color Hex") }
+                            )
+
+                            // Preview Box of active selection
                             Column(
                                 horizontalAlignment = Alignment.CenterHorizontally,
-                                modifier = Modifier
-                                    .clickable { selectedBgColor = hex }
-                                    .weight(1f)
+                                verticalArrangement = Arrangement.Center
                             ) {
                                 Box(
                                     modifier = Modifier
-                                        .size(36.dp)
+                                        .size(44.dp)
                                         .clip(RoundedCornerShape(8.dp))
-                                        .background(ComposeColor(android.graphics.Color.parseColor(hex)))
-                                        .border(
-                                            width = if (selectedBgColor == hex) 3.dp else 1.dp,
-                                            color = if (selectedBgColor == hex) MaterialTheme.colorScheme.primary else ComposeColor.Gray.copy(0.4f),
-                                            shape = RoundedCornerShape(8.dp)
+                                        .background(
+                                            try {
+                                                ComposeColor(android.graphics.Color.parseColor(selectedBgColor))
+                                            } catch (e: Exception) {
+                                                ComposeColor.LightGray
+                                            }
                                         )
+                                        .border(2.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(8.dp))
+                                        .testTag("custom_color_preview_box")
                                 )
-                                Spacer(Modifier.height(4.dp))
-                                Text(label, fontSize = 9.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Spacer(Modifier.height(2.dp))
+                                Text("Preview", fontSize = 10.sp, color = MaterialTheme.colorScheme.outline)
                             }
                         }
                     }
