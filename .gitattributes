@@ -1,0 +1,4 @@
+# Treat JAR files as binary so that Git does not corrupt them during line-ending translation (e.g. on Windows)
+*.jar binary
+*.webp binary
+*.png binary
