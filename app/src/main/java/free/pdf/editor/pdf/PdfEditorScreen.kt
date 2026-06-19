@@ -163,7 +163,7 @@ fun PdfEditorScreen(
                 title = {
                     Column {
                         Text(
-                            text = "PDF Editor Workspace",
+                            text = "PDF Editor",
                             fontSize = 17.sp,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurface
